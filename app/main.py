@@ -2,6 +2,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from dotenv import load_dotenv
+
+# Load environment variables before creating the pipeline.
+load_dotenv()
+
 from app.api.routes import create_app
 from app.embeddings.embedder import EmbeddingGenerator
 from app.generation.generator import AnswerGenerator

@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from typing import Any
+
+from openai import OpenAI
 
 from app.generation.prompts import build_rag_prompt
 
@@ -57,9 +60,9 @@ class AnswerGenerator:
         query: str | None = None,
         chunks: list[Any] | None = None,
     ) -> str:
-        """Generate an answer using either text context or document chunks."""
+        """Generate an answer using text context or document chunks."""
 
-        # Support the pipeline interface:
+        # Pipeline interface:
         # generate(query="...", chunks=[...])
         if query is not None or chunks is not None:
             actual_question = query if query is not None else question
@@ -91,7 +94,7 @@ class AnswerGenerator:
                 context=actual_context,
             )
 
-        # Support the generation unit-test interface:
+        # Generation test interface:
         # generate(question="...", context="...")
         if question is None:
             raise ValueError("question cannot be empty")
@@ -103,9 +106,47 @@ class AnswerGenerator:
 
 
 class _DefaultLLM:
-    """Small deterministic LLM adapter used for local development."""
+    """OpenRouter LLM adapter used by the production RAG application."""
+
+    OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
+
+    def __init__(self) -> None:
+        api_key = os.getenv("OPENROUTER_API_KEY")
+
+        if not api_key:
+            raise RuntimeError(
+                "OPENROUTER_API_KEY is not configured. "
+                "Set it in your environment or .env file."
+            )
+
+        self.client = OpenAI(
+            base_url=self.OPENROUTER_BASE_URL,
+            api_key=api_key,
+        )
+
+        self.model = os.getenv(
+            "OPENROUTER_MODEL",
+            "openai/gpt-4o-mini",
+        )
 
     def generate(self, prompt: str) -> str:
-        """Return the supplied prompt."""
+        """Generate a grounded response through OpenRouter."""
 
-        return prompt
+        response = self.client.chat.completions.create(
+            model=self.model,
+            messages=[
+                {
+                    "role": "user",
+                    "content": prompt,
+                }
+            ],
+        )
+
+        answer = response.choices[0].message.content
+
+        if not answer:
+            raise RuntimeError(
+                "OpenRouter returned an empty response."
+            )
+
+        return answer.strip()
