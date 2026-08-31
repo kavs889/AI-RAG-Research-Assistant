@@ -216,3 +216,19 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Production RAG project
+.venv/
+
+# Environment variables and secrets
+.env
+.env.*
+!.env.example
+
+# Local data and generated artifacts
+data/raw/*
+data/processed/*
+data/indexes/*
+
+# Local application artifacts
+*.log
