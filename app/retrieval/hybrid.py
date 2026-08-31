@@ -17,7 +17,8 @@ class HybridRetrievalResult:
 
 class HybridRetriever:
     """
-    Combine semantic and BM25 retrieval using Reciprocal Rank Fusion.
+    Combine semantic and BM25 retrieval using
+    Reciprocal Rank Fusion.
 
     RRF score:
 
@@ -37,7 +38,9 @@ class HybridRetriever:
         rrf_k: int = DEFAULT_RRF_K,
     ) -> None:
         if rrf_k <= 0:
-            raise ValueError("rrf_k must be greater than 0")
+            raise ValueError(
+                "rrf_k must be greater than 0"
+            )
 
         self.semantic_retriever = semantic_retriever
         self.bm25_retriever = bm25_retriever
@@ -54,7 +57,9 @@ class HybridRetriever:
             raise ValueError("query cannot be empty")
 
         if top_k <= 0:
-            raise ValueError("top_k must be greater than 0")
+            raise ValueError(
+                "top_k must be greater than 0"
+            )
 
         # Retrieve more candidates than requested so RRF has
         # enough results from both retrieval strategies to fuse.
@@ -73,29 +78,36 @@ class HybridRetriever:
         fused_scores: dict[str, float] = {}
         chunks: dict[str, DocumentChunk] = {}
 
-        # Add semantic retrieval contribution.
-        for rank, result in enumerate(semantic_results, start=1):
+        # Semantic retrieval contribution.
+        for rank, result in enumerate(
+            semantic_results,
+            start=1,
+        ):
             chunk_id = result.chunk.chunk_id
 
-            fused_scores[chunk_id] = fused_scores.get(
-                chunk_id,
-                0.0,
-            ) + self._rrf_score(rank)
+            fused_scores[chunk_id] = (
+                fused_scores.get(chunk_id, 0.0)
+                + self._rrf_score(rank)
+            )
 
             chunks[chunk_id] = result.chunk
 
-        # Add BM25 retrieval contribution.
-        for rank, result in enumerate(bm25_results, start=1):
+        # BM25 retrieval contribution.
+        for rank, result in enumerate(
+            bm25_results,
+            start=1,
+        ):
             chunk_id = result.chunk.chunk_id
 
-            fused_scores[chunk_id] = fused_scores.get(
-                chunk_id,
-                0.0,
-            ) + self._rrf_score(rank)
+            fused_scores[chunk_id] = (
+                fused_scores.get(chunk_id, 0.0)
+                + self._rrf_score(rank)
+            )
 
             chunks[chunk_id] = result.chunk
 
         # Deterministic ordering:
+        #
         # 1. Highest RRF score first.
         # 2. Chunk ID alphabetically for ties.
         ranked_chunk_ids = sorted(
@@ -114,7 +126,10 @@ class HybridRetriever:
             for chunk_id in ranked_chunk_ids[:top_k]
         ]
 
-    def _rrf_score(self, rank: int) -> float:
+    def _rrf_score(
+        self,
+        rank: int,
+    ) -> float:
         """Calculate the Reciprocal Rank Fusion contribution."""
 
         return 1.0 / (self.rrf_k + rank)

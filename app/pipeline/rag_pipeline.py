@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
 
 from app.generation.generator import AnswerGenerator
 from app.ingestion.models import DocumentChunk
@@ -36,18 +35,29 @@ class RAGPipeline:
         """Retrieve relevant context and generate an answer."""
 
         if not question or not question.strip():
-            raise ValueError("question cannot be empty")
+            raise ValueError(
+                "question cannot be empty"
+            )
 
         if top_k <= 0:
-            raise ValueError("top_k must be greater than zero")
+            raise ValueError(
+                "top_k must be greater than zero"
+            )
 
         results = self.retriever.retrieve(
             query=question,
             top_k=top_k,
         )
 
-        chunks = [result.chunk for result in results]
-        scores = [result.score for result in results]
+        chunks = [
+            result.chunk
+            for result in results
+        ]
+
+        scores = [
+            result.score
+            for result in results
+        ]
 
         answer = self.generator.generate(
             query=question,
