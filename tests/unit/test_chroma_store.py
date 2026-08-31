@@ -1,6 +1,7 @@
 import pytest
 
 from app.ingestion.models import DocumentChunk
+from app.retrieval.vector_store import RetrievalResult
 from app.storage.chroma_store import ChromaVectorStore
 
 
@@ -38,10 +39,13 @@ def test_chroma_store_adds_and_searches_chunks(tmp_path):
     )
 
     assert len(results) == 1
-    assert results[0]["chunk"].chunk_id == "chunk-1"
-    assert results[0]["chunk"].text == "Python is a programming language."
-    assert results[0]["chunk"].source == "sample.txt"
-    assert results[0]["score"] == pytest.approx(1.0)
+    assert isinstance(results[0], RetrievalResult)
+    assert results[0].chunk.chunk_id == "chunk-1"
+    assert results[0].chunk.text == (
+        "Python is a programming language."
+    )
+    assert results[0].chunk.source == "sample.txt"
+    assert results[0].score == pytest.approx(1.0)
 
 
 def test_chroma_store_persists_data(tmp_path):
@@ -71,7 +75,7 @@ def test_chroma_store_persists_data(tmp_path):
     )
 
     assert len(results) == 1
-    assert results[0]["chunk"].chunk_id == "chunk-1"
+    assert results[0].chunk.chunk_id == "chunk-1"
 
 
 def test_chroma_store_add_many(tmp_path):
@@ -104,7 +108,7 @@ def test_chroma_store_add_many(tmp_path):
     )
 
     assert len(results) == 2
-    assert results[0]["chunk"].chunk_id == "chunk-1"
+    assert results[0].chunk.chunk_id == "chunk-1"
 
 
 def test_chroma_store_respects_top_k(tmp_path):
@@ -113,7 +117,10 @@ def test_chroma_store_respects_top_k(tmp_path):
     )
 
     chunks = [
-        make_chunk(f"chunk-{index}", f"Document {index}")
+        make_chunk(
+            f"chunk-{index}",
+            f"Document {index}",
+        )
         for index in range(5)
     ]
 

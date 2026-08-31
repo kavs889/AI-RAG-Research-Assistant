@@ -5,6 +5,7 @@ from typing import Any
 import chromadb
 
 from app.ingestion.models import DocumentChunk
+from app.retrieval.vector_store import RetrievalResult
 
 
 class ChromaVectorStore:
@@ -38,7 +39,7 @@ class ChromaVectorStore:
         chunk: DocumentChunk,
         embedding: list[float],
     ) -> None:
-        """Add or update a document chunk and its embedding."""
+        """Add or update a single document chunk."""
 
         if not embedding:
             raise ValueError("embedding cannot be empty")
@@ -71,7 +72,9 @@ class ChromaVectorStore:
             return
 
         if any(not embedding for embedding in embeddings):
-            raise ValueError("embeddings cannot contain empty values")
+            raise ValueError(
+                "embeddings cannot contain empty values"
+            )
 
         metadatas = [
             {
@@ -92,14 +95,18 @@ class ChromaVectorStore:
         self,
         query_embedding: list[float],
         top_k: int = 5,
-    ) -> list[dict[str, Any]]:
+    ) -> list[RetrievalResult]:
         """Search the vector store using cosine similarity."""
 
         if not query_embedding:
-            raise ValueError("query_embedding cannot be empty")
+            raise ValueError(
+                "query_embedding cannot be empty"
+            )
 
         if top_k <= 0:
-            raise ValueError("top_k must be greater than zero")
+            raise ValueError(
+                "top_k must be greater than zero"
+            )
 
         results = self.collection.query(
             query_embeddings=[query_embedding],
@@ -111,30 +118,40 @@ class ChromaVectorStore:
         metadatas = results.get("metadatas", [[]])[0]
         distances = results.get("distances", [[]])[0]
 
-        search_results = []
+        search_results: list[RetrievalResult] = []
 
         for index, chunk_id in enumerate(ids):
             metadata = metadatas[index] or {}
 
+            chunk = DocumentChunk(
+                chunk_id=chunk_id,
+                text=documents[index],
+                source=metadata.get("source", ""),
+                metadata={
+                    key: value
+                    for key, value in metadata.items()
+                    if key != "source"
+                },
+            )
+
+            # Chroma returns cosine distance.
+            # Convert distance to similarity so the rest of
+            # the retrieval system uses a consistent score.
+            score = 1.0 - distances[index]
+
             search_results.append(
-                {
-                    "chunk": DocumentChunk(
-                        chunk_id=chunk_id,
-                        text=documents[index],
-                        source=metadata.get("source", ""),
-                        metadata={
-                            key: value
-                            for key, value in metadata.items()
-                            if key != "source"
-                        },
-                    ),
-                    "score": 1.0 - distances[index],
-                }
+                RetrievalResult(
+                    chunk=chunk,
+                    score=score,
+                )
             )
 
         return search_results
 
-    def delete(self, chunk_id: str) -> None:
+    def delete(
+        self,
+        chunk_id: str,
+    ) -> None:
         """Delete a chunk from the vector store."""
 
         self.collection.delete(
@@ -157,3 +174,4 @@ class ChromaVectorStore:
             name=self.collection_name,
             metadata={"hnsw:space": "cosine"},
         )
+        
