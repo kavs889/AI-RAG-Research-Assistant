@@ -38,21 +38,31 @@ class RAGPipeline:
             raise ValueError("question cannot be empty")
 
         if top_k <= 0:
-            raise ValueError("top_k must be greater than zero")
+            raise ValueError(
+                "top_k must be greater than zero"
+            )
 
         results = self.retriever.retrieve(
             query=question,
             top_k=top_k,
         )
 
-        chunks = [result.chunk for result in results]
-        scores = [result.score for result in results]
+        chunks = [
+            result.chunk
+            for result in results
+        ]
 
-        # Use positional arguments here so the pipeline does not
-        # depend on the exact parameter names used by AnswerGenerator.
+        scores = [
+            result.score
+            for result in results
+        ]
+
+        if not chunks:
+            raise ValueError("context cannot be empty")
+
         answer = self.generator.generate(
-            question,
-            chunks,
+            query=question,
+            chunks=chunks,
         )
 
         return RAGResponse(

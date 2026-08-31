@@ -8,89 +8,104 @@ from app.generation.prompts import build_rag_prompt
 
 @dataclass(frozen=True)
 class GenerationResult:
-    """Result returned by the RAG generation layer."""
+    """Result produced by the answer generation layer."""
 
     answer: str
-    model: str | None = None
-    prompt: str | None = None
 
 
-class AnswerGenerator:
-    """Generate answers using retrieved context."""
+class RAGGenerator:
+    """Generate answers from a question and text context."""
 
-    DEFAULT_MODEL = "gpt-4o-mini"
-
-    def __init__(
-        self,
-        llm: Any | None = None,
-        model_name: str = DEFAULT_MODEL,
-    ) -> None:
+    def __init__(self, llm: Any) -> None:
         self.llm = llm
-        self.model_name = model_name
-
-    def _get_llm(self) -> Any:
-        """Create the OpenAI client lazily when no LLM is injected."""
-
-        if self.llm is None:
-            from openai import OpenAI
-
-            self.llm = OpenAI()
-
-        return self.llm
 
     def generate(
         self,
         question: str,
         context: str,
     ) -> str:
-        """Generate an answer using the supplied retrieval context."""
+        """Generate an answer from a question and text context."""
+
+        if not question or not question.strip():
+            raise ValueError("question cannot be empty")
+
+        if not context or not context.strip():
+            raise ValueError("context cannot be empty")
 
         prompt = build_rag_prompt(
             question=question,
             context=context,
         )
 
-        llm = self._get_llm()
+        return self.llm.generate(prompt)
 
-        # Support the deterministic fake LLM used by unit tests.
-        if hasattr(llm, "generate"):
-            response = llm.generate(prompt)
 
-            if not isinstance(response, str):
-                raise TypeError("LLM generate() must return a string")
+class AnswerGenerator:
+    """Application-level answer generator for retrieved document chunks."""
 
-            return response.strip()
+    def __init__(self, llm: Any | None = None) -> None:
+        if llm is None:
+            llm = _DefaultLLM()
 
-        # OpenAI client path.
-        response = llm.chat.completions.create(
-            model=self.model_name,
-            messages=[
-                {
-                    "role": "system",
-                    "content": (
-                        "You are a research assistant. "
-                        "Answer questions using only the provided context. "
-                        "If the context does not contain enough information, "
-                        "say that the information is not available in the context."
-                    ),
-                },
-                {
-                    "role": "user",
-                    "content": prompt,
-                },
-            ],
-            temperature=0,
+        self.generator = RAGGenerator(llm=llm)
+
+    def generate(
+        self,
+        question: str | None = None,
+        context: str | None = None,
+        *,
+        query: str | None = None,
+        chunks: list[Any] | None = None,
+    ) -> str:
+        """Generate an answer using either text context or document chunks."""
+
+        # Support the pipeline interface:
+        # generate(query="...", chunks=[...])
+        if query is not None or chunks is not None:
+            actual_question = query if query is not None else question
+
+            if not actual_question or not actual_question.strip():
+                raise ValueError("question cannot be empty")
+
+            if not chunks:
+                raise ValueError("context cannot be empty")
+
+            context_parts: list[str] = []
+
+            for chunk in chunks:
+                if hasattr(chunk, "text"):
+                    text = chunk.text
+                else:
+                    text = str(chunk)
+
+                if text and text.strip():
+                    context_parts.append(text.strip())
+
+            actual_context = "\n\n".join(context_parts)
+
+            if not actual_context:
+                raise ValueError("context cannot be empty")
+
+            return self.generator.generate(
+                question=actual_question,
+                context=actual_context,
+            )
+
+        # Support the generation unit-test interface:
+        # generate(question="...", context="...")
+        if question is None:
+            raise ValueError("question cannot be empty")
+
+        return self.generator.generate(
+            question=question,
+            context=context or "",
         )
 
-        answer = response.choices[0].message.content
 
-        if not answer:
-            raise ValueError("LLM returned an empty response")
+class _DefaultLLM:
+    """Small deterministic LLM adapter used for local development."""
 
-        return answer.strip()
+    def generate(self, prompt: str) -> str:
+        """Return the supplied prompt."""
 
-
-class RAGGenerator(AnswerGenerator):
-    """Backward-compatible name for the RAG generation component."""
-
-    pass
+        return prompt

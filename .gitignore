@@ -232,3 +232,6 @@ data/indexes/*
 
 # Local application artifacts
 *.log
+
+# Chroma local vector database
+data/chroma/

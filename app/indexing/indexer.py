@@ -9,7 +9,7 @@ from app.ingestion.chunker import TextChunker
 from app.ingestion.loader import DocumentLoader
 from app.ingestion.models import DocumentChunk
 from app.retrieval.bm25 import BM25Retriever
-from app.storage.chroma_store import ChromaVectorStore
+from app.retrieval.vector_store import InMemoryVectorStore
 
 
 @dataclass(frozen=True)
@@ -32,28 +32,19 @@ class DocumentIndexer:
         loader: DocumentLoader | None = None,
         chunker: TextChunker | None = None,
         embedding_generator: EmbeddingGenerator | None = None,
-        vector_store: Any | None = None,
-        persist_directory: str = "data/chroma",
+        vector_store: InMemoryVectorStore | None = None,
     ) -> None:
         self.loader = loader or DocumentLoader()
         self.chunker = chunker or TextChunker()
         self.embedding_generator = (
             embedding_generator or EmbeddingGenerator()
         )
-
-        # Use persistent ChromaDB by default.
-        # A custom vector store can still be injected for unit tests.
-        self.vector_store = vector_store or ChromaVectorStore(
-            persist_directory=persist_directory,
-        )
+        self.vector_store = vector_store or InMemoryVectorStore()
 
         self.bm25_retriever: BM25Retriever | None = None
         self.chunks: list[DocumentChunk] = []
 
-    def index_directory(
-        self,
-        directory: str | Path,
-    ) -> IndexingResult:
+    def index_directory(self, directory: str | Path) -> IndexingResult:
         """Index all supported documents in a directory."""
 
         directory_path = Path(directory)
@@ -79,39 +70,54 @@ class DocumentIndexer:
         all_chunks: list[DocumentChunk] = []
 
         for file_path in files:
-            document = self.loader.load(file_path)
+            loaded = self.loader.load(file_path)
 
-            chunks = self.chunker.chunk_document(document)
+            if not loaded:
+                continue
 
-            all_chunks.extend(chunks)
             documents_processed += 1
+
+            # The production DocumentLoader returns a list of
+            # DocumentChunk objects. Existing test doubles may
+            # return a single document object.
+            if isinstance(loaded, list):
+                loaded_documents = loaded
+            else:
+                loaded_documents = [loaded]
+
+            for loaded_document in loaded_documents:
+
+                # Production TextChunker exposes split_text().
+                # Existing test doubles expose chunk_document().
+                if hasattr(self.chunker, "chunk_document"):
+                    chunks = self.chunker.chunk_document(
+                        loaded_document
+                    )
+                else:
+                    chunks = self.chunker.split_text(
+                        text=loaded_document.text,
+                        source=loaded_document.source,
+                    )
+
+                all_chunks.extend(chunks)
 
         if all_chunks:
             embeddings = self.embedding_generator.embed_texts(
                 [chunk.text for chunk in all_chunks]
             )
 
-            # Add embeddings to the persistent vector store.
-            if hasattr(self.vector_store, "add_many"):
-                self.vector_store.add_many(
-                    chunks=all_chunks,
-                    embeddings=embeddings,
+            for chunk, embedding in zip(
+                all_chunks,
+                embeddings,
+                strict=True,
+            ):
+                self.vector_store.add(
+                    chunk=chunk,
+                    embedding=embedding,
                 )
-            else:
-                # Keep compatibility with simpler/custom vector stores.
-                for chunk, embedding in zip(
-                    all_chunks,
-                    embeddings,
-                    strict=True,
-                ):
-                    self.vector_store.add(
-                        chunk=chunk,
-                        embedding=embedding,
-                    )
 
         self.chunks = all_chunks
 
-        # Build the keyword index from the current document set.
         self.bm25_retriever = BM25Retriever(
             chunks=all_chunks,
         )
@@ -139,31 +145,3 @@ class DocumentIndexer:
             query=query,
             top_k=top_k,
         )
-
-    def search_vectors(
-        self,
-        query: str,
-        top_k: int = 5,
-    ) -> list[Any]:
-        """Generate a query embedding and search the vector store."""
-
-        if not query or not query.strip():
-            raise ValueError("query cannot be empty")
-
-        if top_k <= 0:
-            raise ValueError("top_k must be greater than zero")
-
-        query_embedding = self.embedding_generator.embed_text(query)
-
-        return self.vector_store.search(
-            query_embedding=query_embedding,
-            top_k=top_k,
-        )
-
-    def count_vectors(self) -> int:
-        """Return the number of vectors stored."""
-
-        if hasattr(self.vector_store, "count"):
-            return self.vector_store.count()
-
-        return 0
